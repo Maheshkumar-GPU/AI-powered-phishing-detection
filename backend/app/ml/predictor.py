@@ -1,9 +1,104 @@
 import os
+import re
 import joblib
 import numpy as np
+from urllib.parse import urlparse
+import tldextract
 from app.ml.feature_extractor import extract_features, features_to_vector
 from app.config import settings
 from app.utils.logger import logger
+
+UUID_PATTERN = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+    re.IGNORECASE,
+)
+
+TRUSTED_DOMAINS = {
+    "google.com", "googleapis.com", "google.co.in", "google.co.uk",
+    "youtube.com", "youtu.be",
+    "microsoft.com", "microsoftonline.com", "live.com", "outlook.com",
+    "office.com", "office365.com", "sharepoint.com", "teams.microsoft.com",
+    "apple.com", "icloud.com",
+    "amazon.com", "aws.amazon.com", "amazonaws.com",
+    "facebook.com", "instagram.com", "whatsapp.com", "fb.com",
+    "twitter.com", "x.com",
+    "linkedin.com",
+    "github.com", "githubusercontent.com", "gitlab.com",
+    "openai.com", "chatgpt.com",
+    "anthropic.com", "claude.ai",
+    "netflix.com",
+    "spotify.com",
+    "dropbox.com",
+    "slack.com",
+    "zoom.us",
+    "cloudflare.com",
+    "reddit.com", "redd.it",
+    "wikipedia.org",
+    "stackoverflow.com",
+    "npmjs.com",
+    "pypi.org",
+    "docker.com",
+    "vercel.app", "netlify.app", "replit.app", "replit.com",
+    "notion.so",
+    "figma.com",
+    "stripe.com",
+    "twilio.com",
+    "sendgrid.net",
+    "hubspot.com",
+    "salesforce.com",
+    "shopify.com",
+    "wordpress.com", "wordpress.org",
+    "medium.com",
+    "substack.com",
+    "discord.com", "discordapp.com",
+    "telegram.org",
+    "canva.com",
+    "adobe.com",
+}
+
+
+def _get_registered_domain(url: str) -> str:
+    ext = tldextract.extract(url)
+    if ext.domain and ext.suffix:
+        return f"{ext.domain}.{ext.suffix}".lower()
+    return ""
+
+
+def _is_trusted_domain(url: str) -> bool:
+    registered = _get_registered_domain(url)
+    return registered in TRUSTED_DOMAINS
+
+
+def _path_is_uuid_like(url: str) -> bool:
+    parsed = urlparse(url)
+    return bool(UUID_PATTERN.search(parsed.path))
+
+
+def _adjust_for_context(url: str, prediction: str, confidence: float, risk_score: float) -> tuple[str, float, float]:
+    """
+    Apply post-processing corrections to catch common false positives.
+
+    Rules (applied in order — first match wins):
+      1. Trusted domain  → force legitimate, high confidence.
+      2. UUID path on a .com/.org/.net/.io/.co/.edu/.gov domain  → halve risk score.
+    """
+    if _is_trusted_domain(url):
+        logger.info(f"Trusted domain override applied for: {url}")
+        return "legitimate", 0.98, 0.02
+
+    registered = _get_registered_domain(url)
+    ext = tldextract.extract(url)
+    suffix = f".{ext.suffix}".lower() if ext.suffix else ""
+    common_tlds = {".com", ".org", ".net", ".io", ".co", ".edu", ".gov", ".app", ".dev"}
+
+    if _path_is_uuid_like(url) and suffix in common_tlds:
+        risk_score = round(risk_score * 0.5, 4)
+        if risk_score < 0.35:
+            prediction = "legitimate"
+            confidence = round(max(confidence, 1.0 - risk_score), 4)
+        logger.info(f"UUID-path correction applied for: {url} → risk {risk_score}")
+
+    return prediction, confidence, risk_score
 
 
 class PhishingPredictor:
@@ -25,7 +120,7 @@ class PhishingPredictor:
         else:
             logger.warning("Trained model not found. Using rule-based fallback predictor.")
 
-    def _rule_based_predict(self, features: dict) -> tuple[str, float, float]:
+    def _rule_based_predict(self, features: dict, url: str = "") -> tuple[str, float, float]:
         score = 0.0
         max_score = 100.0
 
@@ -41,16 +136,25 @@ class PhishingPredictor:
             score += 10
         if features["double_slash_redirect"]:
             score += 10
-        if features["url_length"] > 75:
+        if features["url_length"] > 100:
             score += 5
         if features["subdomain_count"] >= 3:
             score += 10
-        if features["dash_count"] >= 3:
-            score += 5
         if features["url_similarity_index"] > 0:
             score += features["url_similarity_index"] * 20
-        if features["entropy"] > 4.5:
-            score += 5
+
+        has_uuid_path = _path_is_uuid_like(url) if url else False
+
+        if not has_uuid_path:
+            if features["dash_count"] >= 5:
+                score += 5
+            if features["entropy"] > 5.0:
+                score += 5
+        else:
+            parsed = urlparse(url)
+            domain_dashes = parsed.netloc.count("-")
+            if domain_dashes >= 3:
+                score += 5
 
         score = min(score, max_score)
         risk_score = round(score / max_score, 4)
@@ -86,9 +190,13 @@ class PhishingPredictor:
                 risk_score = round(phishing_prob, 4)
             except Exception as e:
                 logger.error(f"ML prediction failed, using rule-based: {e}")
-                prediction, confidence, risk_score = self._rule_based_predict(features)
+                prediction, confidence, risk_score = self._rule_based_predict(features, url)
         else:
-            prediction, confidence, risk_score = self._rule_based_predict(features)
+            prediction, confidence, risk_score = self._rule_based_predict(features, url)
+
+        prediction, confidence, risk_score = _adjust_for_context(
+            url, prediction, confidence, risk_score
+        )
 
         return {
             "prediction": prediction,
