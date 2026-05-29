@@ -10,9 +10,7 @@ Step 1 — Set Up the Python Backend
 
 Requirements: Python 3.10+, pip
 
-# Extract the backend
-tar -xzf phishing_backend.tar.gz
-cd backend
+
 # Install dependencies
 pip install -r requirements.txt
 # Start the server
