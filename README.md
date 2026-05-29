@@ -1,102 +1,146 @@
-PhishGuard AI
+Step 1 — Open Project in PyCharm
 
-AI-powered phishing URL detection with a cybersecurity chatbot assistant.
-What's Included
-File	What it is
-phishing_backend.tar.gz	Python FastAPI backend — runs on your machine
-phishguard-frontend.tar.gz	Standalone React frontend — open in browser via PyCharm or any terminal
-Quick Start
-Step 1 — Set Up the Python Backend
+Open your project folder.
 
-Requirements: Python 3.10+, pip
+Step 2 — Open Terminal
 
+Inside PyCharm:
 
-# Install dependencies
+View → Tool Windows → Terminal
+Step 3 — Go to Backend Folder
+cd backend
+Step 4 — Create Virtual Environment
+python -m venv venv
+
+Activate it:
+
+Windows
+venv\Scripts\activate
+
+If activated successfully, you will see:
+
+(venv)
+Step 5 — Install Required Packages
 pip install -r requirements.txt
-# Start the server
-python run.py
 
-The API will be live at http://localhost:8000
+If requirements.txt does not exist:
 
-    Optional — Train the ML model (skip this to use the rule-based predictor):
+pip install flask fastapi uvicorn pandas numpy scikit-learn joblib python-dotenv tldextract flask-cors
+Step 6 — Add Dataset
 
-    python run.py --train --dataset "path/to/your/dataset.csv"
+Place your phishing dataset CSV file inside:
 
-    Dataset used: PhiUSIIL_Phishing_URL_Dataset.csv
+backend/datasets/
 
-    Optional — Enable AI chat analysis (requires Ollama):
+Example:
 
-    ollama pull llama3
-    ollama serve
+backend/datasets/phishing_dataset.csv
 
-Step 2 — Set Up the Frontend
+Dataset format:
 
-Requirements: Node.js 18+
+URL	label
+https://google.com	0
+http://fake-login.ml	1
 
+Correct labels:
 
-# Install dependencies
+0 = legitimate
+1 = phishing
+Step 7 — Train the ML Model
+
+Run:
+
+python -m app.ml.model_trainer
+
+After training, these files should be created:
+
+backend/models/phishing_model.pkl
+backend/models/scaler.pkl
+Step 8 — Start Backend Server
+
+If using Flask:
+
+python app.py
+
+If using FastAPI:
+
+uvicorn app.main:app --reload
+
+Server will start on:
+
+http://localhost:8000
+
+or
+
+http://127.0.0.1:8000
+Step 9 — Run Frontend
+
+Open NEW terminal.
+
+Go to frontend folder:
+
+cd frontend
+
+Install packages:
+
 npm install
-# Start the app
+
+Start frontend:
+
 npm run dev
 
-Open http://localhost:5173 in your browser.
-Features
-Page	What it does
-Dashboard	Live scan activity, risk overview, threat feed
-Scanner	Paste any URL → get ML + AI threat analysis instantly
-AI Assistant	Chat with a cybersecurity SOC analyst powered by Ollama
-History	Browse, search, filter and delete past scans
-Reports	Auto-generated forensic reports per scan
-Analytics	Risk distribution charts, top phishing TLDs, model status
-API Endpoints
+Frontend runs on:
 
-Base URL: http://localhost:8000
-Method	Path	Description
-GET	/api/health	Health check
-POST	/api/scanner/scan	Scan a URL
-GET	/api/scanner/scan/{id}	Get scan result by ID
-GET	/api/history	List scan history
-DELETE	/api/history/{id}	Delete a scan
-POST	/api/chatbot/message	Send chat message
-GET	/api/chatbot/history/{session_id}	Get chat history
-GET	/api/analytics/summary	Analytics overview
-GET	/api/reports	List reports
+http://localhost:5173
 
-Full interactive docs: http://localhost:8000/docs
-Folder Structure
+Open this in browser.
 
-backend/
-├── run.py                  ← entry point
-├── requirements.txt
-└── app/
-    ├── main.py             ← FastAPI app, CORS, routes
-    ├── config.py           ← settings (ports, paths, model config)
-    ├── database.py         ← SQLite setup
-    ├── ml/
-    │   ├── feature_extractor.py   ← URL feature engineering
-    │   ├── predictor.py           ← ML + rule-based prediction + whitelist
-    │   └── model_trainer.py       ← train RandomForest from dataset
-    └── routes/
-        ├── scanner.py
-        ├── chatbot.py
-        ├── history.py
-        ├── reports.py
-        └── analytics.py
-phishguard-frontend/
-├── package.json
-├── vite.config.ts          ← dev server on port 5173
-└── src/
-    ├── main.tsx            ← sets API base to localhost:8000
-    ├── lib/api-client/     ← all API hooks
-    ├── pages/              ← Dashboard, Scanner, Chatbot, History, Reports, Analytics
-    └── components/         ← UI, layout, shared components
+Step 10 — Test URL Prediction
 
-Troubleshooting
+Example test URL:
 
-"Backend API offline" banner showing → Make sure python run.py is running and the terminal shows Uvicorn running on http://0.0.0.0:8000
+http://banking-secure-login-alert.ml
 
-Model predicts legitimate sites as phishing → The fixed predictor.py includes a whitelist of 50+ trusted domains (Google, GitHub, ChatGPT, etc.) that always return legitimate. To add more, open backend/app/ml/predictor.py and add to the TRUSTED_DOMAINS set.
+Expected:
 
-Chatbot gives no response / AI analysis missing → Ollama is not running. Either start it (ollama serve) or use the scanner without AI — the ML prediction still works.
+High risk score
+Phishing detection
+Common Errors
+1. No module named dotenv
 
-Port already in use → Change the port in backend/app/config.py (default: 8000) and update src/main.tsx in the frontend to match.
+Fix:
+
+pip install python-dotenv
+2. Ollama Port Already Running
+
+Check:
+
+ollama list
+
+Stop Ollama:
+
+taskkill /F /IM ollama.exe
+3. Frontend Not Opening
+
+Install Node.js from:
+
+Node.js Official Website
+
+Then restart terminal.
+
+Important Fix You Must Apply
+
+Inside prediction logic:
+
+DON’T use:
+
+risk_score = phishing_prob
+
+Use hybrid scoring instead.
+
+Correct Label Mapping
+
+Very important:
+
+0 = legitimate
+1 = phishing
