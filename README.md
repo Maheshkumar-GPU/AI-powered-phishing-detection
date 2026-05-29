@@ -35,9 +35,7 @@ Step 2 — Set Up the Frontend
 
 Requirements: Node.js 18+
 
-# Extract the frontend (in a new terminal)
-tar -xzf phishguard-frontend.tar.gz
-cd phishguard-frontend
+
 # Install dependencies
 npm install
 # Start the app
